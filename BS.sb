@@ -1,0 +1,53 @@
+#!/bin/bash
+#SBATCH -c 16
+#SBATCH --mem=120G
+#SBATCH --mail-type=END
+#SBATCH --mail-user=bradlem4@ccf.org
+#SBATCH --array=1-4
+#SBATCH -J Bladder-tumors-bayesspace
+
+## USAGE: sbatch BS.sb <step-number> 
+
+## Step 1: Find likelihood saturation points using qTune and qPlot and determine num. clusters to be used. Enter into col. 2 of params.csv after.
+## Step 2: Optimize enhanced clusterings with short MCMC chains, and use resultant graph to find optimal jitter scale. Column 3 is the jitter prior, default is set to 0.3. Initially, run step #2 with a prior of 0.3, and pick the
+	#jitter scale closest to the jitter prior you set. If MCMC chain doesn't converge to jitter prior, adjust prior and re-run. Enter jitter scale into col. 4 of params.csv after.
+## Step 3: Run BayesSpace with optimal cluster number and jitter scale over 200,000 MCMC iterations. Will take pretty long.
+## Step 4: Perform DE analysis on enhanced clusters. 
+## Step 5: Perform DE between a pair of clusters
+export sample_path="/home/bradlem4/beegfs/human-bladder/visium/sr-results/"
+export sample=$(ls $sample_path | nl -w1 -s' ' | grep "^$SLURM_ARRAY_TASK_ID " | cut -f2 -d' ')
+#export filter_path="/home/bradlem4/beegfs/human-bladder/tumors/visium/filtered-cells/${sample}.csv"
+echo $sample
+module load R/4.1.2
+case $1 in 
+	
+	1)
+		if [ -z "$filter_path"]
+		then
+			Rscript scripts/qPlot.R ${sample_path}/${sample}/outs $sample $filter_path
+		else 
+			Rscript scripts/qPlot.R ${sample_path}/${sample}/outs $sample
+		fi
+	;;
+
+	2)
+		mkdir -p ~/beegfs/bayesspace/outs/chains/${sample}
+		Rscript scripts/tuneBS.R $sample $(grep $sample params.csv | cut -f2 -d',') $(grep $sample params.csv | cut -f3 -d',')
+	;;
+
+	3)
+		Rscript scripts/BayesSpace.R $sample $(grep $sample params.csv | cut -f2 -d',') $(grep $sample params.csv | cut -f3 -d',') $(grep $sample params.csv | cut -f4 -d',')
+	;;
+
+	4)
+		Rscript scripts/clustergenes.R $sample
+	;;
+
+	5)
+		Rscript scripts/compareClusters.R $sample $(grep $sample params.csv | cut -f5 -d',')
+	;;
+
+	*)
+		echo "unknown step"
+	;;
+esac
